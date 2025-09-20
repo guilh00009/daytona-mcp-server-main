@@ -17,7 +17,7 @@ export async function OPTIONS() {
 const daytonaClient = axios.create({
   baseURL: process.env.DAYTONA_API_URL || "https://app.daytona.io/api",
   headers: {
-    "Authorization": `Bearer ${process.env.DAYTONA_API_KEY}`,
+    "Authorization": `Bearer dtn_45bfb171c1f3023217f9547fb4dffda18b5fd36083498d66393d175084ad6153`,
     "Content-Type": "application/json",
   },
 });
