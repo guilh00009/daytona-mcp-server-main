@@ -1,0 +1,1425 @@
+openapi: 3.1.0
+info:
+  title: Daytona MCP Server API
+  description: |
+    Model Context Protocol server for Daytona cloud development environments.
+    Connects to https://app.daytona.io/api with Bearer token authentication.
+
+    This MCP server enables AI assistants to:
+    - Create and manage development sandboxes
+    - Execute code in multiple programming languages  
+    - Perform file operations and git workflows
+    - Monitor execution logs and system health
+  version: 2.0.0
+  contact:
+    name: Daytona MCP Support
+    url: https://github.com/daytonaio/daytona-mcp
+    email: support@daytona.io
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+servers:
+  - url: https://app.daytona.io/api
+    description: Daytona Production API
+  - url: http://localhost:3000
+    description: Local MCP server
+security:
+  - BearerAuth: []
+paths:
+  /mcp/initialize:
+    post:
+      summary: Initialize MCP connection
+      tags:
+        - MCP Protocol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                protocolVersion:
+                  type: string
+                  const: '2024-11-05'
+                capabilities:
+                  type: object
+                  properties:
+                    roots:
+                      type: object
+                      properties:
+                        listChanged:
+                          type: boolean
+                    sampling:
+                      type: object
+                clientInfo:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    version:
+                      type: string
+                  required:
+                    - name
+                    - version
+              required:
+                - protocolVersion
+                - capabilities
+                - clientInfo
+      responses:
+        '200':
+          description: MCP initialized
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  protocolVersion:
+                    type: string
+                    const: '2024-11-05'
+                  capabilities:
+                    type: object
+                    properties:
+                      tools:
+                        type: object
+                        properties:
+                          listChanged:
+                            type: boolean
+                      resources:
+                        type: object
+                        properties:
+                          subscribe:
+                            type: boolean
+                          listChanged:
+                            type: boolean
+                      logging:
+                        type: object
+                  serverInfo:
+                    type: object
+                    properties:
+                      name:
+                        type: string
+                        const: Daytona MCP Server
+                      version:
+                        type: string
+                        const: 2.0.0
+  /mcp/tools/list:
+    post:
+      summary: List available tools
+      tags:
+        - MCP Protocol
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cursor:
+                  type: string
+      responses:
+        '200':
+          description: Tools list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  tools:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Tool'
+                  nextCursor:
+                    type: string
+  /mcp/tools/call:
+    post:
+      summary: Execute MCP tool
+      tags:
+        - MCP Protocol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                arguments:
+                  type: object
+              required:
+                - name
+                - arguments
+            examples:
+              create_sandbox:
+                summary: Create sandbox
+                value:
+                  name: daytona_create_sandbox
+                  arguments:
+                    name: my-python-env
+                    image: python:3.11
+                    packages:
+                      - numpy
+                      - pandas
+              execute_code:
+                summary: Execute code
+                value:
+                  name: daytona_execute_code
+                  arguments:
+                    sandboxId: sb_abc123
+                    language: python
+                    code: print('Hello World!')
+      responses:
+        '200':
+          description: Tool execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ToolResult'
+  /mcp/resources/list:
+    post:
+      summary: List resources
+      tags:
+        - MCP Protocol
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                cursor:
+                  type: string
+      responses:
+        '200':
+          description: Resources list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  resources:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Resource'
+  /mcp/resources/read:
+    post:
+      summary: Read resource
+      tags:
+        - MCP Protocol
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                uri:
+                  type: string
+                  format: uri
+                  examples:
+                    - daytona://sandbox/sb_abc123
+                    - daytona://file/sb_abc123/main.py
+              required:
+                - uri
+      responses:
+        '200':
+          description: Resource content
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ResourceContent'
+  /sandbox:
+    get:
+      summary: List sandboxes
+      tags:
+        - Sandboxes
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum:
+              - running
+              - stopped
+              - starting
+              - stopping
+              - error
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Sandboxes list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sandboxes:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Sandbox'
+                  total:
+                    type: integer
+                  hasMore:
+                    type: boolean
+    post:
+      summary: Create sandbox
+      tags:
+        - Sandboxes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSandboxRequest'
+      responses:
+        '201':
+          description: Sandbox created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sandbox'
+  /sandbox/{sandboxId}:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+          pattern: ^sb_[a-zA-Z0-9]+$
+    get:
+      summary: Get sandbox details
+      tags:
+        - Sandboxes
+      responses:
+        '200':
+          description: Sandbox details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sandbox'
+        '404':
+          description: Sandbox not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+    delete:
+      summary: Delete sandbox
+      tags:
+        - Sandboxes
+      parameters:
+        - name: force
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '204':
+          description: Sandbox deleted
+  /sandbox/{sandboxId}/start:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Start sandbox
+      tags:
+        - Sandboxes
+      responses:
+        '200':
+          description: Sandbox starting
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sandbox'
+  /sandbox/{sandboxId}/stop:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Stop sandbox
+      tags:
+        - Sandboxes
+      responses:
+        '200':
+          description: Sandbox stopping
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Sandbox'
+  /sandbox/{sandboxId}/execute:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Execute code
+      tags:
+        - Code Execution
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExecuteRequest'
+            examples:
+              python:
+                summary: Python code
+                value:
+                  language: python
+                  code: |
+                    import numpy as np
+                    x = np.array([1, 2, 3, 4, 5])
+                    print(f"Mean: {x.mean()}")
+                  timeout: 30
+              bash:
+                summary: Bash commands
+                value:
+                  language: bash
+                  code: ls -la && pwd
+                  timeout: 10
+      responses:
+        '200':
+          description: Execution result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExecutionResult'
+  /sandbox/{sandboxId}/files:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: List files
+      tags:
+        - File Management
+      parameters:
+        - name: path
+          in: query
+          schema:
+            type: string
+            default: /
+        - name: recursive
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Files list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/FileInfo'
+                  path:
+                    type: string
+    post:
+      summary: Create file/directory
+      tags:
+        - File Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/CreateFileRequest'
+                - $ref: '#/components/schemas/CreateDirectoryRequest'
+      responses:
+        '201':
+          description: File/directory created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileInfo'
+  /sandbox/{sandboxId}/files/download:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Download file
+      tags:
+        - File Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                encoding:
+                  type: string
+                  enum:
+                    - utf-8
+                    - base64
+                  default: utf-8
+              required:
+                - path
+      responses:
+        '200':
+          description: File content
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content:
+                    type: string
+                  encoding:
+                    type: string
+                  size:
+                    type: integer
+                  mimeType:
+                    type: string
+  /sandbox/{sandboxId}/files/upload:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    post:
+      summary: Upload file
+      tags:
+        - File Management
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                path:
+                  type: string
+                content:
+                  type: string
+                encoding:
+                  type: string
+                  enum:
+                    - utf-8
+                    - base64
+                  default: utf-8
+                overwrite:
+                  type: boolean
+                  default: false
+              required:
+                - path
+                - content
+      responses:
+        '201':
+          description: File uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileInfo'
+  /sandbox/{sandboxId}/git:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get git status
+      tags:
+        - Git Operations
+      parameters:
+        - name: path
+          in: query
+          schema:
+            type: string
+            default: /workspace
+      responses:
+        '200':
+          description: Git status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitStatus'
+    post:
+      summary: Execute git operation
+      tags:
+        - Git Operations
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GitOperation'
+            examples:
+              clone:
+                summary: Clone repository
+                value:
+                  operation: clone
+                  repository: https://github.com/user/repo.git
+                  path: /workspace
+              commit:
+                summary: Commit changes
+                value:
+                  operation: commit
+                  message: Add new feature
+                  files:
+                    - main.py
+                    - test.py
+      responses:
+        '200':
+          description: Git operation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GitResult'
+  /sandbox/{sandboxId}/logs:
+    parameters:
+      - name: sandboxId
+        in: path
+        required: true
+        schema:
+          type: string
+    get:
+      summary: Get logs
+      tags:
+        - Monitoring
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum:
+              - execution
+              - system
+              - error
+              - all
+            default: all
+        - name: lines
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 100
+        - name: follow
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/LogEntry'
+                  hasMore:
+                    type: boolean
+  /user/profile:
+    get:
+      summary: Get user profile
+      tags:
+        - User
+      responses:
+        '200':
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserProfile'
+  /user/usage:
+    get:
+      summary: Get usage statistics
+      tags:
+        - User
+      responses:
+        '200':
+          description: Usage stats
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UsageStats'
+  /health:
+    get:
+      summary: Health check
+      tags:
+        - Health
+      responses:
+        '200':
+          description: Health status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: dtn_[a-f0-9]{64}
+      description: >
+        Daytona API Bearer token.
+
+        Format: dtn_ followed by 64 hexadecimal characters.
+
+        Example:
+        dtn_45bfb171c1f3023217f9547fb4dffda18b5fd36083498d66393d175084ad6153
+  schemas:
+    Tool:
+      type: object
+      properties:
+        name:
+          type: string
+          pattern: ^daytona_[a-z_]+$
+        description:
+          type: string
+        inputSchema:
+          type: object
+      required:
+        - name
+        - description
+        - inputSchema
+    ToolResult:
+      type: object
+      properties:
+        content:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/TextContent'
+              - $ref: '#/components/schemas/ImageContent'
+        isError:
+          type: boolean
+          default: false
+        _meta:
+          type: object
+          properties:
+            executionTimeMs:
+              type: number
+            sandboxId:
+              type: string
+      required:
+        - content
+    TextContent:
+      type: object
+      properties:
+        type:
+          type: string
+          const: text
+        text:
+          type: string
+      required:
+        - type
+        - text
+    ImageContent:
+      type: object
+      properties:
+        type:
+          type: string
+          const: image
+        data:
+          type: string
+          format: base64
+        mimeType:
+          type: string
+          pattern: ^image/
+      required:
+        - type
+        - data
+        - mimeType
+    Resource:
+      type: object
+      properties:
+        uri:
+          type: string
+          format: uri
+          pattern: ^daytona://
+        name:
+          type: string
+        description:
+          type: string
+        mimeType:
+          type: string
+      required:
+        - uri
+        - name
+    ResourceContent:
+      type: object
+      properties:
+        contents:
+          type: array
+          items:
+            oneOf:
+              - $ref: '#/components/schemas/TextContent'
+              - $ref: '#/components/schemas/BlobContent'
+        _meta:
+          type: object
+          properties:
+            lastModified:
+              type: string
+              format: date-time
+            size:
+              type: number
+      required:
+        - contents
+    BlobContent:
+      type: object
+      properties:
+        type:
+          type: string
+          const: blob
+        data:
+          type: string
+          format: base64
+        mimeType:
+          type: string
+      required:
+        - type
+        - data
+        - mimeType
+    Sandbox:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^sb_[a-zA-Z0-9]+$
+        name:
+          type: string
+          maxLength: 100
+        status:
+          type: string
+          enum:
+            - creating
+            - starting
+            - running
+            - stopping
+            - stopped
+            - error
+            - deleting
+        image:
+          type: string
+        packages:
+          type: array
+          items:
+            type: string
+        environment:
+          type: object
+          additionalProperties:
+            type: string
+        ports:
+          type: array
+          items:
+            type: integer
+        resources:
+          type: object
+          properties:
+            cpu:
+              type: string
+            memory:
+              type: string
+            storage:
+              type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        url:
+          type: string
+          format: uri
+      required:
+        - id
+        - name
+        - status
+        - image
+        - createdAt
+    CreateSandboxRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 100
+          pattern: ^[a-zA-Z0-9][a-zA-Z0-9-_]*[a-zA-Z0-9]$
+        image:
+          type: string
+          default: python:3.11
+        packages:
+          type: array
+          items:
+            type: string
+        environment:
+          type: object
+          additionalProperties:
+            type: string
+        ports:
+          type: array
+          items:
+            type: integer
+            minimum: 1
+            maximum: 65535
+        timeout:
+          type: integer
+          minimum: 300
+          maximum: 3600
+          default: 1800
+      required:
+        - name
+    ExecuteRequest:
+      type: object
+      properties:
+        language:
+          type: string
+          enum:
+            - python
+            - javascript
+            - typescript
+            - bash
+            - shell
+            - node
+            - go
+            - rust
+            - java
+        code:
+          type: string
+        timeout:
+          type: integer
+          minimum: 1
+          maximum: 300
+          default: 30
+        workingDirectory:
+          type: string
+          default: /workspace
+      required:
+        - language
+        - code
+    ExecutionResult:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+          enum:
+            - success
+            - error
+            - timeout
+            - cancelled
+        output:
+          type: object
+          properties:
+            stdout:
+              type: string
+            stderr:
+              type: string
+            exitCode:
+              type: integer
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/GeneratedFile'
+        executionTime:
+          type: number
+        timestamp:
+          type: string
+          format: date-time
+      required:
+        - id
+        - status
+        - output
+        - executionTime
+        - timestamp
+    GeneratedFile:
+      type: object
+      properties:
+        path:
+          type: string
+        size:
+          type: integer
+        mimeType:
+          type: string
+        isImage:
+          type: boolean
+        preview:
+          type: string
+      required:
+        - path
+        - size
+        - mimeType
+    FileInfo:
+      type: object
+      properties:
+        path:
+          type: string
+        name:
+          type: string
+        type:
+          type: string
+          enum:
+            - file
+            - directory
+            - symlink
+        size:
+          type: integer
+          minimum: 0
+        permissions:
+          type: string
+          pattern: ^[0-7]{3,4}$
+        owner:
+          type: string
+        group:
+          type: string
+        modifiedAt:
+          type: string
+          format: date-time
+        isHidden:
+          type: boolean
+        mimeType:
+          type: string
+      required:
+        - path
+        - name
+        - type
+        - size
+        - modifiedAt
+    CreateFileRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          const: file
+        path:
+          type: string
+        content:
+          type: string
+        encoding:
+          type: string
+          enum:
+            - utf-8
+            - base64
+          default: utf-8
+        permissions:
+          type: string
+          pattern: ^[0-7]{3,4}$
+          default: '0644'
+      required:
+        - type
+        - path
+        - content
+    CreateDirectoryRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          const: directory
+        path:
+          type: string
+        permissions:
+          type: string
+          pattern: ^[0-7]{3,4}$
+          default: '0755'
+      required:
+        - type
+        - path
+    GitStatus:
+      type: object
+      properties:
+        repository:
+          type: string
+          format: uri
+        branch:
+          type: string
+        commit:
+          type: string
+          pattern: ^[a-f0-9]{40}$
+        ahead:
+          type: integer
+          minimum: 0
+        behind:
+          type: integer
+          minimum: 0
+        staged:
+          type: array
+          items:
+            type: string
+        modified:
+          type: array
+          items:
+            type: string
+        untracked:
+          type: array
+          items:
+            type: string
+        clean:
+          type: boolean
+      required:
+        - branch
+        - clean
+    GitOperation:
+      type: object
+      discriminator:
+        propertyName: operation
+        mapping:
+          clone: '#/components/schemas/GitCloneOp'
+          commit: '#/components/schemas/GitCommitOp'
+          push: '#/components/schemas/GitPushOp'
+          pull: '#/components/schemas/GitPullOp'
+      oneOf:
+        - $ref: '#/components/schemas/GitCloneOp'
+        - $ref: '#/components/schemas/GitCommitOp'
+        - $ref: '#/components/schemas/GitPushOp'
+        - $ref: '#/components/schemas/GitPullOp'
+    GitCloneOp:
+      type: object
+      properties:
+        operation:
+          type: string
+          const: clone
+        repository:
+          type: string
+          format: uri
+        path:
+          type: string
+          default: /workspace
+        branch:
+          type: string
+          default: main
+        depth:
+          type: integer
+          minimum: 1
+      required:
+        - operation
+        - repository
+    GitCommitOp:
+      type: object
+      properties:
+        operation:
+          type: string
+          const: commit
+        message:
+          type: string
+          maxLength: 500
+        files:
+          type: array
+          items:
+            type: string
+        author:
+          type: object
+          properties:
+            name:
+              type: string
+            email:
+              type: string
+              format: email
+      required:
+        - operation
+        - message
+    GitPushOp:
+      type: object
+      properties:
+        operation:
+          type: string
+          const: push
+        remote:
+          type: string
+          default: origin
+        branch:
+          type: string
+        force:
+          type: boolean
+          default: false
+      required:
+        - operation
+    GitPullOp:
+      type: object
+      properties:
+        operation:
+          type: string
+          const: pull
+        remote:
+          type: string
+          default: origin
+        branch:
+          type: string
+        rebase:
+          type: boolean
+          default: false
+      required:
+        - operation
+    GitResult:
+      type: object
+      properties:
+        operation:
+          type: string
+        status:
+          type: string
+          enum:
+            - success
+            - error
+            - conflict
+        message:
+          type: string
+        output:
+          type: string
+        conflicts:
+          type: array
+          items:
+            type: string
+        commit:
+          type: string
+      required:
+        - operation
+        - status
+        - message
+    LogEntry:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        level:
+          type: string
+          enum:
+            - debug
+            - info
+            - warn
+            - error
+            - fatal
+        source:
+          type: string
+          enum:
+            - system
+            - execution
+            - git
+            - file
+            - network
+        message:
+          type: string
+        details:
+          type: object
+        sandboxId:
+          type: string
+        executionId:
+          type: string
+      required:
+        - timestamp
+        - level
+        - source
+        - message
+    UserProfile:
+      type: object
+      properties:
+        id:
+          type: string
+          pattern: ^user_[a-zA-Z0-9]+$
+        email:
+          type: string
+          format: email
+        name:
+          type: string
+        avatar:
+          type: string
+          format: uri
+        plan:
+          type: string
+          enum:
+            - free
+            - pro
+            - enterprise
+        verified:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        settings:
+          type: object
+          properties:
+            defaultImage:
+              type: string
+            autoSaveInterval:
+              type: integer
+            theme:
+              type: string
+              enum:
+                - light
+                - dark
+                - auto
+      required:
+        - id
+        - email
+        - name
+        - plan
+        - verified
+        - createdAt
+    UsageStats:
+      type: object
+      properties:
+        period:
+          type: object
+          properties:
+            start:
+              type: string
+              format: date-time
+            end:
+              type: string
+              format: date-time
+        sandboxes:
+          type: object
+          properties:
+            total:
+              type: integer
+            active:
+              type: integer
+            limit:
+              type: integer
+        execution:
+          type: object
+          properties:
+            minutes:
+              type: number
+            limit:
+              type: number
+        storage:
+          type: object
+          properties:
+            used:
+              type: integer
+            limit:
+              type: integer
+        bandwidth:
+          type: object
+          properties:
+            ingress:
+              type: integer
+            egress:
+              type: integer
+            limit:
+              type: integer
+      required:
+        - period
+        - sandboxes
+        - execution
+        - storage
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - healthy
+            - degraded
+            - unhealthy
+        timestamp:
+          type: string
+          format: date-time
+        version:
+          type: string
+        uptime:
+          type: number
+        services:
+          type: object
+          properties:
+            daytona_api:
+              $ref: '#/components/schemas/ServiceHealth'
+            mcp_server:
+              $ref: '#/components/schemas/ServiceHealth'
+        metrics:
+          type: object
+          properties:
+            requests_per_minute:
+              type: number
+            average_response_time:
+              type: number
+            active_sandboxes:
+              type: integer
+            error_rate:
+              type: number
+      required:
+        - status
+        - timestamp
+        - version
+        - uptime
+        - services
+    ServiceHealth:
+      type: object
+      properties:
+        status:
+          type: string
+          enum:
+            - up
+            - down
+            - degraded
+        response_time:
+          type: number
+        last_check:
+          type: string
+          format: date-time
+        error:
+          type: string
+      required:
+        - status
+        - last_check
+    Error:
+      type: object
+      properties:
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+            details:
+              type: object
+            requestId:
+              type: string
+            timestamp:
+              type: string
+              format: date-time
+          required:
+            - code
+            - message
+      required:
+        - error
+tags:
+  - name: MCP Protocol
+    description: Core MCP operations for tool execution and resource access
+  - name: Sandboxes
+    description: Sandbox lifecycle management and configuration
+  - name: Code Execution
+    description: Execute code in multiple programming languages
+  - name: File Management
+    description: File system operations within sandboxes
+  - name: Git Operations
+    description: Git repository management and version control
+  - name: Monitoring
+    description: Logging and execution monitoring
+  - name: User
+    description: User profile and usage statistics
+  - name: Health
+    description: System health and connectivity monitoring
