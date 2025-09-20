@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daytona MCP SSE Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        .status.connected {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.disconnected {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .events {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .event {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-left: 3px solid #007bff;
+            background-color: white;
+        }
+        .event.log {
+            border-left-color: #28a745;
+        }
+        .event.error {
+            border-left-color: #dc3545;
+        }
+        .event.sandbox-status {
+            border-left-color: #ffc107;
+        }
+        .event.sessions-update {
+            border-left-color: #17a2b8;
+        }
+        .event-header {
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 5px;
+        }
+        .event-data {
+            font-family: monospace;
+            font-size: 12px;
+            color: #6c757d;
+            white-space: pre-wrap;
+        }
+        .timestamp {
+            font-size: 11px;
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Daytona MCP Server-Sent Events Demo</h1>
+        <p>This demo shows how to connect to the Daytona MCP server's SSE endpoint for real-time streaming of sandbox events.</p>
+        
+        <div class="form-group">
+            <label for="sandboxId">Sandbox ID:</label>
+            <input type="text" id="sandboxId" placeholder="Enter sandbox ID" value="">
+        </div>
+        
+        <div class="form-group">
+            <label for="eventType">Event Type:</label>
+            <select id="eventType">
+                <option value="sandbox-status">Sandbox Status (every 5s)</option>
+                <option value="sessions">Sessions (every 10s)</option>
+                <option value="logs">Command Logs (requires sessionId and commandId)</option>
+            </select>
+        </div>
+        
+        <div class="form-group" id="sessionGroup" style="display: none;">
+            <label for="sessionId">Session ID:</label>
+            <input type="text" id="sessionId" placeholder="Enter session ID">
+        </div>
+        
+        <div class="form-group" id="commandGroup" style="display: none;">
+            <label for="commandId">Command ID:</label>
+            <input type="text" id="commandId" placeholder="Enter command ID">
+        </div>
+        
+        <button id="connectBtn" onclick="connect()">Connect</button>
+        <button id="disconnectBtn" onclick="disconnect()" disabled>Disconnect</button>
+        <button onclick="clearEvents()">Clear Events</button>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+    </div>
+    
+    <div class="container">
+        <h2>Events</h2>
+        <div id="events" class="events">
+            <p>Connect to start receiving events...</p>
+        </div>
+    </div>
+
+    <script>
+        let eventSource = null;
+        const eventsContainer = document.getElementById('events');
+        const statusDiv = document.getElementById('status');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const eventTypeSelect = document.getElementById('eventType');
+        const sessionGroup = document.getElementById('sessionGroup');
+        const commandGroup = document.getElementById('commandGroup');
+
+        // Show/hide session and command fields based on event type
+        eventTypeSelect.addEventListener('change', function() {
+            if (this.value === 'logs') {
+                sessionGroup.style.display = 'block';
+                commandGroup.style.display = 'block';
+            } else {
+                sessionGroup.style.display = 'none';
+                commandGroup.style.display = 'none';
+            }
+        });
+
+        function connect() {
+            const sandboxId = document.getElementById('sandboxId').value;
+            const eventType = document.getElementById('eventType').value;
+            const sessionId = document.getElementById('sessionId').value;
+            const commandId = document.getElementById('commandId').value;
+
+            if (!sandboxId) {
+                alert('Please enter a sandbox ID');
+                return;
+            }
+
+            if (eventType === 'logs' && (!sessionId || !commandId)) {
+                alert('Session ID and Command ID are required for logs streaming');
+                return;
+            }
+
+            // Build SSE URL
+            const params = new URLSearchParams({
+                sandboxId,
+                eventType,
+                ...(sessionId && { sessionId }),
+                ...(commandId && { commandId })
+            });
+
+            const sseUrl = `/sse?${params.toString()}`;
+            
+            // Close existing connection
+            if (eventSource) {
+                eventSource.close();
+            }
+
+            // Create new EventSource
+            eventSource = new EventSource(sseUrl);
+
+            // Connection opened
+            eventSource.onopen = function(event) {
+                updateStatus('Connected', 'connected');
+                connectBtn.disabled = true;
+                disconnectBtn.disabled = false;
+                addEvent('connected', 'Connection established', event);
+            };
+
+            // Handle different event types
+            eventSource.addEventListener('connected', function(event) {
+                addEvent('connected', 'Server confirmed connection', JSON.parse(event.data));
+            });
+
+            eventSource.addEventListener('log', function(event) {
+                const data = JSON.parse(event.data);
+                addEvent('log', `Log from ${data.sessionId}/${data.commandId}`, data);
+            });
+
+            eventSource.addEventListener('sandbox-status', function(event) {
+                const data = JSON.parse(event.data);
+                addEvent('sandbox-status', 'Sandbox status update', data);
+            });
+
+            eventSource.addEventListener('sessions-update', function(event) {
+                const data = JSON.parse(event.data);
+                addEvent('sessions-update', 'Sessions update', data);
+            });
+
+            eventSource.addEventListener('error', function(event) {
+                addEvent('error', 'Error event', JSON.parse(event.data));
+            });
+
+            eventSource.addEventListener('log-complete', function(event) {
+                addEvent('log', 'Log stream completed', JSON.parse(event.data));
+            });
+
+            eventSource.addEventListener('log-error', function(event) {
+                addEvent('error', 'Log stream error', JSON.parse(event.data));
+            });
+
+            eventSource.addEventListener('disconnected', function(event) {
+                addEvent('disconnected', 'Server disconnected', JSON.parse(event.data));
+            });
+
+            // Connection error
+            eventSource.onerror = function(event) {
+                updateStatus('Connection Error', 'disconnected');
+                addEvent('error', 'Connection error', event);
+                connectBtn.disabled = false;
+                disconnectBtn.disabled = true;
+            };
+        }
+
+        function disconnect() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+            updateStatus('Disconnected', 'disconnected');
+            connectBtn.disabled = false;
+            disconnectBtn.disabled = true;
+            addEvent('disconnected', 'Client disconnected', {});
+        }
+
+        function updateStatus(message, className) {
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${className}`;
+        }
+
+        function addEvent(type, message, data) {
+            const eventDiv = document.createElement('div');
+            eventDiv.className = `event ${type}`;
+            
+            const header = document.createElement('div');
+            header.className = 'event-header';
+            header.textContent = `${type.toUpperCase()}: ${message}`;
+            
+            const timestamp = document.createElement('div');
+            timestamp.className = 'timestamp';
+            timestamp.textContent = new Date().toLocaleTimeString();
+            
+            const dataDiv = document.createElement('div');
+            dataDiv.className = 'event-data';
+            dataDiv.textContent = JSON.stringify(data, null, 2);
+            
+            eventDiv.appendChild(header);
+            eventDiv.appendChild(timestamp);
+            eventDiv.appendChild(dataDiv);
+            
+            eventsContainer.appendChild(eventDiv);
+            eventsContainer.scrollTop = eventsContainer.scrollHeight;
+        }
+
+        function clearEvents() {
+            eventsContainer.innerHTML = '<p>Events cleared...</p>';
+        }
+
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

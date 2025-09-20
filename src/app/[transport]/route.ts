@@ -1196,6 +1196,62 @@ const handler = createMcpHandler(
         }
       }
     );
+
+    // ==================== SERVER-SENT EVENTS (SSE) ====================
+    
+    server.tool(
+      "getSSEConnectionUrl",
+      "Get the SSE connection URL for real-time streaming of sandbox events",
+      {
+        sandboxId: z.string({
+          description: "ID of the sandbox"
+        }),
+        sessionId: z.string({
+          description: "The ID of the session (optional, required for logs streaming)"
+        }).optional(),
+        commandId: z.string({
+          description: "The ID of the command (optional, required for logs streaming)"
+        }).optional(),
+        eventType: z.enum(['logs', 'sandbox-status', 'sessions'], {
+          description: "Type of events to stream: 'logs' (requires sessionId and commandId), 'sandbox-status', or 'sessions'"
+        }).optional()
+      },
+      async ({ sandboxId, sessionId, commandId, eventType = 'sandbox-status' }) => {
+        try {
+          const baseUrl = process.env.VERCEL_URL 
+            ? `https://${process.env.VERCEL_URL}` 
+            : 'http://localhost:3000';
+          
+          const params = new URLSearchParams({
+            sandboxId,
+            ...(sessionId && { sessionId }),
+            ...(commandId && { commandId }),
+            eventType
+          });
+          
+          const sseUrl = `${baseUrl}/sse?${params.toString()}`;
+          
+          return formatResponse("SSE Connection URL", {
+            url: sseUrl,
+            sandboxId,
+            sessionId,
+            commandId,
+            eventType,
+            usage: {
+              description: "Connect to this URL using EventSource for real-time streaming",
+              example: `const eventSource = new EventSource('${sseUrl}');`,
+              events: {
+                'logs': 'Stream command execution logs (requires sessionId and commandId)',
+                'sandbox-status': 'Stream sandbox status updates every 5 seconds',
+                'sessions': 'Stream active sessions updates every 10 seconds'
+              }
+            }
+          });
+        } catch (error) {
+          return handleApiError(error, "Failed to generate SSE connection URL");
+        }
+      }
+    );
   }
 );
 
