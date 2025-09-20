@@ -479,7 +479,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "getSandbox",
-      "Get detailed information about a specific sandbox",
+      "Get detailed information about a specific sandbox (supports real-time monitoring via SSE)",
       {
         sandboxId: z.string({
           description: "ID of the sandbox"
@@ -487,11 +487,14 @@ const handler = createMcpHandler(
         verbose: z.boolean({
           description: "Include verbose output"
         }).optional(),
+        useSSE: z.boolean({
+          description: "Whether to provide SSE URL for real-time monitoring"
+        }).optional(),
         organizationId: z.string({
           description: "Organization ID (optional, uses default from API key if not provided)"
         }).optional()
       },
-      async ({ sandboxId, verbose, organizationId }) => {
+      async ({ sandboxId, verbose, useSSE, organizationId }) => {
         try {
           const headers: Record<string, string> = organizationId ? { "X-Daytona-Organization-ID": organizationId } : {};
           const params: Record<string, any> = { verbose: verbose || false };
@@ -501,7 +504,30 @@ const handler = createMcpHandler(
             headers
           });
           
-          return formatResponse(`Sandbox: ${sandboxId}`, response.data);
+          const result = {
+            ...response.data,
+            sandboxId,
+            timestamp: new Date().toISOString()
+          };
+
+          // If SSE is requested, provide monitoring URLs
+          if (useSSE) {
+            const baseUrl = process.env.VERCEL_URL 
+              ? `https://${process.env.VERCEL_URL}` 
+              : 'http://localhost:3000';
+            
+            result.sseMonitoring = {
+              sandboxStatus: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sandbox-status`,
+              sessions: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sessions`,
+              usage: {
+                description: "Use these SSE URLs for real-time monitoring",
+                sandboxStatus: "Monitor sandbox status changes every 5 seconds",
+                sessions: "Monitor active sessions every 10 seconds"
+              }
+            };
+          }
+          
+          return formatResponse(`Sandbox: ${sandboxId}`, result);
         } catch (error) {
           return handleApiError(error, `Failed to get sandbox ${sandboxId}`);
         }
@@ -935,7 +961,7 @@ const handler = createMcpHandler(
     
     server.tool(
       "executeCommand",
-      "Execute a command synchronously in a sandbox",
+      "Execute a command in a sandbox (supports real-time monitoring via SSE)",
       {
         sandboxId: z.string({
           description: "ID of the sandbox"
@@ -949,11 +975,14 @@ const handler = createMcpHandler(
         timeout: z.number({
           description: "Timeout in seconds, defaults to 10 seconds"
         }).optional(),
+        useSSE: z.boolean({
+          description: "Whether to provide SSE URL for real-time monitoring"
+        }).optional(),
         organizationId: z.string({
           description: "Organization ID (optional, uses default from API key if not provided)"
         }).optional()
       },
-      async ({ sandboxId, command, cwd, timeout, organizationId }) => {
+      async ({ sandboxId, command, cwd, timeout, useSSE, organizationId }) => {
         try {
           const headers: Record<string, string> = organizationId ? { "X-Daytona-Organization-ID": organizationId } : {};
           
@@ -970,7 +999,31 @@ const handler = createMcpHandler(
           
           const response = await daytonaClient.post(`/toolbox/${sandboxId}/toolbox/process/execute`, requestData, { headers });
           
-          return formatResponse(`Command Executed in Sandbox ${sandboxId}`, response.data);
+          const result = {
+            ...response.data,
+            command,
+            sandboxId,
+            timestamp: new Date().toISOString()
+          };
+
+          // If SSE is requested, provide monitoring URLs
+          if (useSSE) {
+            const baseUrl = process.env.VERCEL_URL 
+              ? `https://${process.env.VERCEL_URL}` 
+              : 'http://localhost:3000';
+            
+            result.sseMonitoring = {
+              sandboxStatus: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sandbox-status`,
+              sessions: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sessions`,
+              usage: {
+                description: "Use these SSE URLs for real-time monitoring",
+                sandboxStatus: "Monitor sandbox status changes",
+                sessions: "Monitor active sessions"
+              }
+            };
+          }
+          
+          return formatResponse(`Command Executed in Sandbox ${sandboxId}`, result);
         } catch (error) {
           return handleApiError(error, `Failed to execute command in sandbox ${sandboxId}`);
         }
@@ -981,22 +1034,48 @@ const handler = createMcpHandler(
     
     server.tool(
       "listSessions",
-      "List all active sessions in a sandbox",
+      "List all active sessions in a sandbox (supports real-time monitoring via SSE)",
       {
         sandboxId: z.string({
           description: "ID of the sandbox"
         }),
+        useSSE: z.boolean({
+          description: "Whether to provide SSE URL for real-time monitoring"
+        }).optional(),
         organizationId: z.string({
           description: "Organization ID (optional, uses default from API key if not provided)"
         }).optional()
       },
-      async ({ sandboxId, organizationId }) => {
+      async ({ sandboxId, useSSE, organizationId }) => {
         try {
           const headers: Record<string, string> = organizationId ? { "X-Daytona-Organization-ID": organizationId } : {};
           
           const response = await daytonaClient.get(`/toolbox/${sandboxId}/toolbox/process/session`, { headers });
           
-          return formatResponse(`Sessions in Sandbox ${sandboxId}`, response.data);
+          const result = {
+            ...response.data,
+            sandboxId,
+            timestamp: new Date().toISOString()
+          };
+
+          // If SSE is requested, provide monitoring URLs
+          if (useSSE) {
+            const baseUrl = process.env.VERCEL_URL 
+              ? `https://${process.env.VERCEL_URL}` 
+              : 'http://localhost:3000';
+            
+            result.sseMonitoring = {
+              sessions: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sessions`,
+              sandboxStatus: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sandbox-status`,
+              usage: {
+                description: "Use these SSE URLs for real-time monitoring",
+                sessions: "Monitor active sessions every 10 seconds",
+                sandboxStatus: "Monitor sandbox status changes every 5 seconds"
+              }
+            };
+          }
+          
+          return formatResponse(`Sessions in Sandbox ${sandboxId}`, result);
         } catch (error) {
           return handleApiError(error, `Failed to list sessions for sandbox ${sandboxId}`);
         }
@@ -1088,7 +1167,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "executeSessionCommand",
-      "Execute a command in a specific session",
+      "Execute a command in a specific session (supports real-time monitoring via SSE)",
       {
         sandboxId: z.string({
           description: "ID of the sandbox"
@@ -1102,11 +1181,14 @@ const handler = createMcpHandler(
         runAsync: z.boolean({
           description: "Whether to execute the command asynchronously"
         }).optional(),
+        useSSE: z.boolean({
+          description: "Whether to provide SSE URL for real-time monitoring"
+        }).optional(),
         organizationId: z.string({
           description: "Organization ID (optional, uses default from API key if not provided)"
         }).optional()
       },
-      async ({ sandboxId, sessionId, command, runAsync, organizationId }) => {
+      async ({ sandboxId, sessionId, command, runAsync, useSSE, organizationId }) => {
         try {
           const headers: Record<string, string> = organizationId ? { "X-Daytona-Organization-ID": organizationId } : {};
           
@@ -1122,7 +1204,32 @@ const handler = createMcpHandler(
           
           const response = await daytonaClient.post(`/toolbox/${sandboxId}/toolbox/process/session/${sessionId}/exec`, requestData, { headers });
           
-          return formatResponse(`Command Executed in Session ${sessionId}`, response.data);
+          const result = {
+            ...response.data,
+            command,
+            sessionId,
+            sandboxId,
+            timestamp: new Date().toISOString()
+          };
+
+          // If SSE is requested, provide monitoring URLs
+          if (useSSE) {
+            const baseUrl = process.env.VERCEL_URL 
+              ? `https://${process.env.VERCEL_URL}` 
+              : 'http://localhost:3000';
+            
+            result.sseMonitoring = {
+              sandboxStatus: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sandbox-status`,
+              sessions: `${baseUrl}/sse?sandboxId=${sandboxId}&eventType=sessions`,
+              usage: {
+                description: "Use these SSE URLs for real-time monitoring",
+                sandboxStatus: "Monitor sandbox status changes",
+                sessions: "Monitor active sessions"
+              }
+            };
+          }
+          
+          return formatResponse(`Command Executed in Session ${sessionId}`, result);
         } catch (error) {
           return handleApiError(error, `Failed to execute command in session ${sessionId} in sandbox ${sandboxId}`);
         }
@@ -1161,7 +1268,7 @@ const handler = createMcpHandler(
 
     server.tool(
       "getSessionCommandLogs",
-      "Get logs for a specific command in a session",
+      "Get logs for a specific command in a session (supports real-time streaming via SSE)",
       {
         sandboxId: z.string({
           description: "ID of the sandbox"
@@ -1175,12 +1282,36 @@ const handler = createMcpHandler(
         follow: z.boolean({
           description: "Whether to follow the logs stream"
         }).optional(),
+        useSSE: z.boolean({
+          description: "Whether to use SSE for real-time streaming (recommended for live logs)"
+        }).optional(),
         organizationId: z.string({
           description: "Organization ID (optional, uses default from API key if not provided)"
         }).optional()
       },
-      async ({ sandboxId, sessionId, commandId, follow, organizationId }) => {
+      async ({ sandboxId, sessionId, commandId, follow, useSSE, organizationId }) => {
         try {
+          // If SSE is requested, return SSE URL instead of direct logs
+          if (useSSE) {
+            const baseUrl = process.env.VERCEL_URL 
+              ? `https://${process.env.VERCEL_URL}` 
+              : 'http://localhost:3000';
+            
+            const sseUrl = `${baseUrl}/sse?sandboxId=${sandboxId}&sessionId=${sessionId}&commandId=${commandId}&eventType=logs`;
+            
+            return formatResponse(`Real-time Logs for Command ${commandId}`, {
+              message: "Use SSE for real-time log streaming",
+              sseUrl,
+              usage: {
+                description: "Connect to the SSE URL for live log streaming",
+                example: `const eventSource = new EventSource('${sseUrl}');`,
+                events: ["log", "log-complete", "log-error"]
+              },
+              alternative: "Set useSSE=false to get static logs"
+            });
+          }
+
+          // Original static logs functionality
           const headers: Record<string, string> = organizationId ? { "X-Daytona-Organization-ID": organizationId } : {};
           const params: Record<string, any> = {};
           if (follow !== undefined) params.follow = follow;
@@ -1190,7 +1321,10 @@ const handler = createMcpHandler(
             headers
           });
           
-          return formatResponse(`Logs for Command ${commandId} in Session ${sessionId}`, response.data);
+          return formatResponse(`Logs for Command ${commandId} in Session ${sessionId}`, {
+            ...response.data,
+            sseNote: "Set useSSE=true for real-time streaming"
+          });
         } catch (error) {
           return handleApiError(error, `Failed to get logs for command ${commandId} in session ${sessionId} in sandbox ${sandboxId}`);
         }

@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
   const sandboxId = searchParams.get('sandboxId');
   const sessionId = searchParams.get('sessionId');
   const commandId = searchParams.get('commandId');
-  const eventType = searchParams.get('eventType') || 'logs';
+  const eventType = searchParams.get('eventType') || 'sandbox-status';
 
   if (!sandboxId) {
     return new Response('Missing sandboxId parameter', { status: 400 });
@@ -50,6 +50,8 @@ export async function GET(request: NextRequest) {
       });
 
       // Handle different event types
+      let cleanupFunction: (() => void) | undefined;
+      
       const handleEventStream = async () => {
         try {
           switch (eventType) {
@@ -61,10 +63,10 @@ export async function GET(request: NextRequest) {
               }
               break;
             case 'sandbox-status':
-              await streamSandboxStatus(sandboxId, sendEvent);
+              cleanupFunction = await streamSandboxStatus(sandboxId, sendEvent);
               break;
             case 'sessions':
-              await streamSessions(sandboxId, sendEvent);
+              cleanupFunction = await streamSessions(sandboxId, sendEvent);
               break;
             default:
               sendEvent('error', { message: `Unknown event type: ${eventType}` });
@@ -83,6 +85,9 @@ export async function GET(request: NextRequest) {
 
       // Handle client disconnect
       request.signal.addEventListener('abort', () => {
+        if (cleanupFunction) {
+          cleanupFunction();
+        }
         sendEvent('disconnected', { message: 'Client disconnected' });
         controller.close();
       });
